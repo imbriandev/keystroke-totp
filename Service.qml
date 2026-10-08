@@ -49,6 +49,7 @@ QtObject {
   readonly property FileView accountsFile: FileView {
     path: root.accountsPath
     printErrors: false
+    watchChanges: true
     atomicWrites: true
     onLoaded: {
       root.accounts = TOTPModel.readAccounts(text())
@@ -60,18 +61,31 @@ QtObject {
     }
   }
 
-  readonly property FileView backupFile: FileView {
-    path: root.backupPath
-    printErrors: false
-    atomicWrites: true
+  readonly property string helperCli: decodeURIComponent(String(Qt.resolvedUrl("bin/totp-cli")).replace(/^file:\/\//, ""))
+
+  readonly property Process backupWorker: Process {
+    onExited: function(code) {
+      if (code === 0 && root.host && root.host.opened) {
+        root.host.requery({ catalog: false, provider: root.key })
+      }
+    }
+  }
+
+  function triggerAutoBackup() {
+    var s = root.settings || {}
+    var dir = String(s.backupDirectory || "").trim()
+    var pass = String(s.backupPassphrase || "").trim()
+    if (!dir && !pass) return
+    if (!dir || !pass || pass.length < 8) return
+    var targetPath = TOTPModel.resolveBackupPath(dir, root.home)
+    backupWorker.command = [root.helperCli, "export", targetPath, "--passphrase", pass]
+    backupWorker.running = true
   }
 
   function save(list) {
     root.accounts = list
     accountsFile.setText(TOTPModel.serializeAccounts(list))
-    if (root.settings && root.settings.autoBackup) {
-      backupFile.setText(TOTPModel.serializeAccounts(list))
-    }
+    root.triggerAutoBackup()
   }
 
   // 1-second clock updates live remaining seconds and OTP codes when palette is opened
@@ -155,31 +169,52 @@ QtObject {
     }
 
     if (effect.type === "totp-export") {
-      backupFile.setText(TOTPModel.serializeAccounts(root.accounts))
-      return {
-        type: "compound",
-        actions: [
-          {
-            type: "notify",
-            glyph: "󰌆",
-            headline: "Backup exported",
-            body: "Saved to " + root.backupPath
-          },
-          { type: "noop" }
-        ]
+      var s = root.settings || {}
+      var pass = String(s.backupPassphrase || "").trim()
+      var dir = String(s.backupDirectory || "").trim()
+      var targetPath = dir ? TOTPModel.resolveBackupPath(dir, root.home) : root.backupPath
+      if (pass && pass.length >= 8) {
+        backupWorker.command = [root.helperCli, "export", targetPath, "--passphrase", pass]
+        backupWorker.running = true
+        return {
+          type: "compound",
+          actions: [
+            {
+              type: "notify",
+              glyph: "󰌆",
+              headline: "Encrypted backup exported",
+              body: "Saved to " + targetPath
+            },
+            { type: "noop" }
+          ]
+        }
+      } else {
+        backupWorker.command = [root.helperCli, "export", targetPath]
+        backupWorker.running = true
+        return {
+          type: "compound",
+          actions: [
+            {
+              type: "notify",
+              glyph: "󰌆",
+              headline: "Backup exported",
+              body: "Saved to " + targetPath
+            },
+            { type: "noop" }
+          ]
+        }
       }
     }
 
     if (effect.type === "totp-import") {
-      var importedText = backupFile.text()
-      var importedList = TOTPModel.readAccounts(importedText)
-      var current = root.accounts || []
-      var merged = current.slice()
-      for (var i = 0; i < importedList.length; i++) {
-        merged = TOTPModel.addAccount(merged, importedList[i])
-      }
-      root.save(merged)
-      if (root.host && root.host.opened) root.host.requery({ catalog: false, provider: root.key })
+      var s = root.settings || {}
+      var pass = String(s.backupPassphrase || "").trim()
+      var dir = String(s.backupDirectory || "").trim()
+      var targetPath = dir ? TOTPModel.resolveBackupPath(dir, root.home) : root.backupPath
+      var cmd = [root.helperCli, "import", targetPath]
+      if (pass) cmd.push("--passphrase", pass)
+      backupWorker.command = cmd
+      backupWorker.running = true
       return {
         type: "compound",
         actions: [
@@ -187,7 +222,7 @@ QtObject {
             type: "notify",
             glyph: "󰌆",
             headline: "Backup imported",
-            body: importedList.length + " accounts merged"
+            body: "Importing accounts from " + targetPath
           },
           { type: "noop" }
         ]

@@ -12,11 +12,22 @@ var DEFAULT_KEY = "totp"
 var SETTINGS = [
   { key: "notifyOnCopy", type: "boolean", label: "Notification on copy", "default": true,
     description: "Show a desktop notification when an OTP code is copied" },
-  { key: "autoBackup", type: "boolean", label: "Automatic backup", "default": false,
-    description: "Save a backup to ~/.local/state/keystroke/totp/backup.json whenever accounts change" },
+  { key: "backupDirectory", type: "string", label: "Auto-backup directory", "default": "",
+    description: "Directory to save encrypted totp-backup.json after changes (leave empty to disable)" },
+  { key: "backupPassphrase", type: "string", label: "Auto-backup passphrase", "default": "",
+    description: "Passphrase for AES-256-GCM encryption. Both directory and passphrase are required." },
   { key: "defaultDigits", type: "number", label: "Default digits", "default": 6, min: 6, max: 8, integer: true },
   { key: "defaultPeriod", type: "number", label: "Default period (seconds)", "default": 30, min: 10, max: 120, integer: true }
 ]
+
+function resolveBackupPath(dir, home) {
+  var d = String(dir || "").trim()
+  if (!d) return ""
+  if (d.charAt(0) === "~") {
+    d = String(home || "") + d.slice(1)
+  }
+  return d.replace(/\/+$/, "") + "/totp-backup.json"
+}
 
 var PATTERNS = [
   { id: "otpauth", regex: "^\\s*otpauth:\\/\\/totp\\/", flags: "i", boost: 25, example: "otpauth://totp/GitHub:user?secret=JBSWY3DP", description: "Pasted TOTP URI" },
