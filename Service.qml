@@ -1,0 +1,203 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import "core/TOTP.js" as TOTPModel
+
+// TOTP: Time-Based One-Time Password extension for the Keystroke command palette.
+//
+// Generates 6-8 digit authenticator codes, searches saved accounts,
+// supports quick one-off OTPs, adding/editing accounts from Base32 secrets or
+// otpauth:// URIs, and exporting/importing backups.
+QtObject {
+  id: root
+  property var shell: null
+  property var extension: null
+  property string omarchyPath: Quickshell.env("OMARCHY_PATH")
+  readonly property string home: Quickshell.env("HOME")
+  property var host: null
+  property var settings: ({ notifyOnCopy: true, autoBackup: false, defaultDigits: 6, defaultPeriod: 30 })
+  property double now: Date.now()
+  readonly property string key: extension && extension.id ? String(extension.id) : "totp"
+  readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || root.home + "/.local/state") + "/keystroke/totp"
+  readonly property string accountsPath: root.stateDir + "/accounts.json"
+  readonly property string backupPath: root.stateDir + "/backup.json"
+
+  property var accounts: []
+  property bool loaded: false
+
+  readonly property var provider: ({
+    apiVersion: 1,
+    name: TOTPModel.NAME,
+    icon: TOTPModel.ICON,
+    iconSource: String(Qt.resolvedUrl("assets/icon.svg")),
+    color: TOTPModel.COLOR,
+    description: "Generate and copy time-based one-time passwords: totp",
+    prefix: "totp",
+    patterns: TOTPModel.PATTERNS,
+    settings: TOTPModel.SETTINGS,
+    query: function(ctx) { return root.query(ctx) },
+    activate: function(row, ctx) { return root.activate(row, ctx) },
+    opened: function() { root.now = Date.now() }
+  })
+
+  // Ensure state directory exists on load
+  readonly property Process dirEnsurer: Process {
+    command: ["mkdir", "-p", root.stateDir]
+  }
+
+  // Persistent storage of TOTP accounts
+  readonly property FileView accountsFile: FileView {
+    path: root.accountsPath
+    printErrors: false
+    atomicWrites: true
+    onLoaded: {
+      root.accounts = TOTPModel.readAccounts(text())
+      root.loaded = true
+    }
+    onLoadFailed: {
+      root.accounts = []
+      root.loaded = true
+    }
+  }
+
+  readonly property FileView backupFile: FileView {
+    path: root.backupPath
+    printErrors: false
+    atomicWrites: true
+  }
+
+  function save(list) {
+    root.accounts = list
+    accountsFile.setText(TOTPModel.serializeAccounts(list))
+    if (root.settings && root.settings.autoBackup) {
+      backupFile.setText(TOTPModel.serializeAccounts(list))
+    }
+  }
+
+  // 1-second clock updates live remaining seconds and OTP codes when palette is opened
+  readonly property Timer clock: Timer {
+    interval: 1000
+    repeat: true
+    running: root.host && root.host.opened
+    onTriggered: {
+      root.now = Date.now()
+      var h = root.host
+      if (h && h.opened && (h.scope === root.key || (h.scope && h.scope.indexOf(root.key) === 0))) {
+        h.requery({ catalog: false, provider: root.key })
+      }
+    }
+  }
+
+  readonly property Connections hostWatch: Connections {
+    target: root.host
+    ignoreUnknownSignals: true
+    function onConfigChanged() {
+      var h = root.host
+      if (!h || typeof h.providerSettings !== "function") return
+      root.settings = h.providerSettings(root.key)
+    }
+  }
+
+  function attach(ctx) {
+    if (ctx && ctx.host) root.host = ctx.host
+    if (ctx && ctx.settings) root.settings = ctx.settings
+  }
+
+  function query(ctx) {
+    root.attach(ctx)
+    root.now = Date.now()
+    var scoped = ctx.scope === root.key ? root.key : (ctx.scope && ctx.scope.indexOf(root.key) === 0 ? ctx.scope : "")
+    if (ctx.scope && !scoped) return []
+    var viaCommand = !!ctx.command
+    var q = viaCommand ? ctx.command.rest : ctx.query
+    return TOTPModel.rows(q, root.accounts, ctx.settings, root.now, scoped, root.key, viaCommand, ctx.patterns)
+  }
+
+  function activate(row, ctx) {
+    root.attach(ctx)
+    var effect = ctx.alternate && row.altAction ? row.altAction : row.action
+    if (!effect) return effect
+
+    if (effect.type === "totp-add") {
+      var updated = TOTPModel.addAccount(root.accounts, effect.account)
+      root.save(updated)
+      if (root.host && root.host.opened) root.host.requery({ catalog: false, provider: root.key })
+      return {
+        type: "compound",
+        actions: [
+          {
+            type: "notify",
+            glyph: "󰌆",
+            headline: "Account added",
+            body: effect.account.name + (effect.account.issuer ? " (" + effect.account.issuer + ")" : "")
+          },
+          { type: "noop" }
+        ]
+      }
+    }
+
+    if (effect.type === "totp-remove") {
+      var removed = TOTPModel.removeAccount(root.accounts, effect.id)
+      root.save(removed)
+      if (root.host && root.host.opened) root.host.requery({ catalog: false, provider: root.key })
+      return {
+        type: "compound",
+        actions: [
+          {
+            type: "notify",
+            glyph: "󰌆",
+            headline: "Account removed",
+            body: "Account has been deleted"
+          },
+          { type: "noop" }
+        ]
+      }
+    }
+
+    if (effect.type === "totp-export") {
+      backupFile.setText(TOTPModel.serializeAccounts(root.accounts))
+      return {
+        type: "compound",
+        actions: [
+          {
+            type: "notify",
+            glyph: "󰌆",
+            headline: "Backup exported",
+            body: "Saved to " + root.backupPath
+          },
+          { type: "noop" }
+        ]
+      }
+    }
+
+    if (effect.type === "totp-import") {
+      var importedText = backupFile.text()
+      var importedList = TOTPModel.readAccounts(importedText)
+      var current = root.accounts || []
+      var merged = current.slice()
+      for (var i = 0; i < importedList.length; i++) {
+        merged = TOTPModel.addAccount(merged, importedList[i])
+      }
+      root.save(merged)
+      if (root.host && root.host.opened) root.host.requery({ catalog: false, provider: root.key })
+      return {
+        type: "compound",
+        actions: [
+          {
+            type: "notify",
+            glyph: "󰌆",
+            headline: "Backup imported",
+            body: importedList.length + " accounts merged"
+          },
+          { type: "noop" }
+        ]
+      }
+    }
+
+    return effect
+  }
+
+  Component.onCompleted: {
+    dirEnsurer.running = true
+  }
+}
