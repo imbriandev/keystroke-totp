@@ -16,8 +16,10 @@ var SETTINGS = [
     description: "Show matching accounts in the main search bar without typing 'totp' (off by default)" },
   { key: "backupDirectory", type: "string", label: "Auto-backup directory", "default": "",
     description: "Directory to save encrypted totp-backup.json after changes (leave empty to disable)" },
-  { key: "backupPassphrase", type: "string", label: "Auto-backup passphrase", "default": "",
+  { key: "backupPassphrase", type: "string", password: true, label: "Auto-backup passphrase", "default": "",
     description: "Passphrase for AES-256-GCM encryption. Both directory and passphrase are required." },
+  { key: "showBackupPassphrase", type: "boolean", label: "Show backup passphrase", "default": false,
+    description: "Display backup passphrase in plain text instead of masking it" },
   { key: "defaultDigits", type: "number", label: "Default digits", "default": 6, min: 6, max: 8, integer: true },
   { key: "defaultPeriod", type: "number", label: "Default period (seconds)", "default": 30, min: 10, max: 120, integer: true }
 ]
@@ -971,6 +973,23 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
       order: 81,
       score: 9,
       action: { type: "totp-import" }
+    })
+    var autoBackupDir = (settings && settings.backupDirectory) || ""
+    var autoBackupPass = (settings && settings.backupPassphrase) || ""
+    var showPass = !!(settings && settings.showBackupPassphrase)
+    var passDisplay = autoBackupPass ? (showPass ? autoBackupPass : "•••••••• (" + autoBackupPass.length + " chars)") : "Not configured"
+    out.push({
+      id: "manage-backup-config",
+      title: "Auto-backup: " + (autoBackupDir ? autoBackupDir : "Disabled"),
+      subtitle: "Passphrase: " + passDisplay + " · Enter opens Settings",
+      icon: "󰌆",
+      tint: COLOR,
+      section: "Backup",
+      verb: "Settings",
+      tier: "item",
+      order: 85,
+      score: 8,
+      action: { type: "navigate", scope: "settings/" + sKey, title: "TOTP Settings" }
     })
     for (var i = 0; i < list.length; i++) {
       var a = list[i]

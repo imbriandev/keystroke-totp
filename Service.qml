@@ -15,7 +15,7 @@ QtObject {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   readonly property string home: Quickshell.env("HOME")
   property var host: null
-  property var settings: ({ notifyOnCopy: true, searchInRoot: false, autoBackup: false, defaultDigits: 6, defaultPeriod: 30 })
+  property var settings: ({ notifyOnCopy: true, searchInRoot: false, autoBackup: false, showBackupPassphrase: false, defaultDigits: 6, defaultPeriod: 30 })
   property double now: Date.now()
   readonly property string key: extension && extension.id ? String(extension.id) : "totp"
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || root.home + "/.local/state") + "/keystroke/totp"
@@ -120,11 +120,22 @@ QtObject {
   readonly property Timer clock: Timer {
     interval: 1000
     repeat: true
-    running: root.host && root.host.opened
+    running: true
     onTriggered: {
       root.now = Date.now()
       var h = root.host
-      if (h && h.opened && (h.scope === root.key || (h.scope && h.scope.indexOf(root.key) === 0))) {
+      if (!h || !h.opened) return
+      var inScope = h.scope === root.key || (h.scope && h.scope.indexOf(root.key) === 0)
+      var hasTotpRows = false
+      if (h.rows && h.rows.length) {
+        for (var i = 0; i < h.rows.length; i++) {
+          if (h.rows[i].providerKey === root.key) {
+            hasTotpRows = true
+            break
+          }
+        }
+      }
+      if (inScope || hasTotpRows) {
         h.requery({ catalog: false, provider: root.key })
       }
     }

@@ -33,6 +33,7 @@ Item {
   property int previewRemaining: 0
   property bool secretValid: false
   property string cleanSecret: ""
+  property bool showSecret: false
 
   function focusInput() {
     nameField.forceActiveFocus()
@@ -300,10 +301,35 @@ Item {
       Column {
         width: parent.width
         spacing: Style.space(4)
-        Text { text: "Secret Key (Base32) *"; color: root.muted; font.family: root.fontFamily; font.pixelSize: root.fontLabel }
+        Item {
+          width: parent.width
+          height: labelText.height
+          Text {
+            id: labelText
+            anchors.left: parent.left
+            text: "Secret Key (Base32) *"
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: root.fontLabel
+          }
+          Text {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.showSecret ? "󰈈 Hide (Ctrl+H)" : "󰈉 Reveal (Ctrl+H)"
+            color: root.accent
+            font.family: root.fontFamily
+            font.pixelSize: root.fontCaption
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.showSecret = !root.showSecret
+            }
+          }
+        }
         Ui.TextField {
           id: secretField
           width: parent.width
+          password: !root.showSecret
           foreground: root.foreground
           accent: root.accent
           font.family: root.fontFamily
@@ -312,6 +338,11 @@ Item {
           onTextEdited: root.updateValidation()
           Keys.onReturnPressed: event => { root.save(); event.accepted = true }
           Keys.onPressed: event => {
+            if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_H) {
+              root.showSecret = !root.showSecret
+              event.accepted = true
+              return
+            }
             if (event.key === Qt.Key_Escape) { if (root.host) root.host.goBack(); event.accepted = true; return }
             if (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_S)) {
               root.save(); event.accepted = true
