@@ -1,0 +1,17 @@
+# Local data & backups
+accounts.json
+backup*.json
+totp-backup*.json
+*.bak
+
+# Environment & credentials
+*.env
+*.pem
+*.key
+
+# Editor & OS artifacts
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
