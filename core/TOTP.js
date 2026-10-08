@@ -818,7 +818,7 @@ function accountActionRows(account, now, settings, scopeKey) {
   return out
 }
 
-function accountRow(account, now, settings, explicitScore, scopeKey) {
+function accountRow(account, now, settings, explicitScore, scopeKey, index) {
   var sKey = scopeKey || DEFAULT_KEY
   var code = generateCode(account, now)
   var formatted = formatCode(code.value)
@@ -836,9 +836,9 @@ function accountRow(account, now, settings, explicitScore, scopeKey) {
     verb: "Copy OTP",
     altVerb: quickPaste ? "Paste OTP" : "Actions",
     tier: "item",
-    order: 10,
-    keywords: "totp otp 2fa " + account.name + " " + account.issuer,
-    description: "time-based one-time password " + account.name + " " + account.issuer,
+    order: index !== undefined ? 10 + index : 10,
+    keywords: "totp otp 2fa " + account.name + " " + (account.issuer || ""),
+    description: "time-based one-time password " + account.name + " " + (account.issuer || ""),
     accessory: formatted + "  ·  " + code.remainingSeconds + "s",
     preview: formatted,
     previewLabel: (account.issuer || "TOTP").toUpperCase(),
@@ -1102,7 +1102,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
       var acc = list[i]
       var match = true
       if (searchTerms.length > 0) {
-        var hay = (acc.name + " " + acc.issuer).toLowerCase()
+        var hay = (acc.name + " " + (acc.issuer || "")).toLowerCase()
         for (var t = 0; t < searchTerms.length; t++) {
           if (hay.indexOf(searchTerms[t]) < 0) {
             match = false
@@ -1112,7 +1112,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
       }
       if (match) {
         matchedCount++
-        out.push(accountRow(acc, now, settings, 50 - i, sKey))
+        out.push(accountRow(acc, now, settings, q ? undefined : 1, sKey, i))
       }
     }
 
@@ -1126,39 +1126,45 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
         section: "Accounts",
         verb: "Add Account",
         tier: "item",
-        score: 1,
+        score: q ? undefined : 1,
         action: { type: "totp-open-add" }
       })
     }
 
-    // Action row for adding an account
-    out.push({
-      id: "add-account-action",
-      title: "Add New Account",
-      subtitle: "Open form to configure secret key or scan URI",
-      icon: "󰐿",
-      tint: COLOR,
-      section: "Actions",
-      verb: "Add Account",
-      tier: "item",
-      order: 70,
-      score: 5,
-      action: { type: "totp-open-add" }
-    })
+    // Action row for adding an account (only when empty query, or if query matches 'add')
+    if (!q || "add new create account".indexOf(q.toLowerCase()) >= 0) {
+      out.push({
+        id: "add-account-action",
+        title: "Add New Account",
+        subtitle: "Open form to configure secret key or scan URI",
+        icon: "󰐿",
+        tint: COLOR,
+        section: "Actions",
+        verb: "Add Account",
+        tier: "item",
+        order: 900,
+        score: q ? undefined : 1,
+        keywords: "add new create account",
+        action: { type: "totp-open-add" }
+      })
+    }
 
-    // Navigation and management rows inside scoped view
-    out.push({
-      id: "manage-screen",
-      title: "Manage All Accounts & Backups",
-      subtitle: "View secret keys, export encrypted backup, or import accounts",
-      icon: "󰒓",
-      section: "Actions",
-      verb: "Manage",
-      tier: "item",
-      order: 71,
-      score: 4,
-      action: { type: "navigate", scope: sKey + "/manage", title: "Manage TOTP" }
-    })
+    // Navigation and management rows (only when empty query, or if query matches 'manage' or 'backup')
+    if (!q || "manage backup export import accounts".indexOf(q.toLowerCase()) >= 0) {
+      out.push({
+        id: "manage-screen",
+        title: "Manage All Accounts & Backups",
+        subtitle: "View secret keys, export encrypted backup, or import accounts",
+        icon: "󰒓",
+        section: "Actions",
+        verb: "Manage",
+        tier: "item",
+        order: 901,
+        score: q ? undefined : 1,
+        keywords: "manage backup export import accounts",
+        action: { type: "navigate", scope: sKey + "/manage", title: "Manage TOTP" }
+      })
+    }
     return out
   }
 
@@ -1168,7 +1174,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
   } else {
     // When non-empty query at root, offer accounts matching the query (score omitted for fuzzy Match.match)
     for (var i = 0; i < list.length; i++) {
-      out.push(accountRow(list[i], now, settings, undefined, sKey))
+      out.push(accountRow(list[i], now, settings, undefined, sKey, i))
     }
   }
 
