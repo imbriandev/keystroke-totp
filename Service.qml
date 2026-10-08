@@ -37,7 +37,10 @@ QtObject {
     settings: TOTPModel.SETTINGS,
     query: function(ctx) { return root.query(ctx) },
     activate: function(row, ctx) { return root.activate(row, ctx) },
-    opened: function() { root.now = Date.now() }
+    opened: function() {
+      root.now = Date.now()
+      accFile.reload()
+    }
   })
 
   // Ensure state directory exists on load
@@ -47,6 +50,7 @@ QtObject {
 
   // Persistent storage of TOTP accounts
   readonly property FileView accountsFile: FileView {
+    id: accFile
     path: root.accountsPath
     printErrors: false
     watchChanges: true
@@ -59,6 +63,7 @@ QtObject {
       root.accounts = []
       root.loaded = true
     }
+    onFileChanged: reload()
   }
 
   readonly property string helperCli: decodeURIComponent(String(Qt.resolvedUrl("bin/totp-cli")).replace(/^file:\/\//, ""))
