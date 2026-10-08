@@ -43,7 +43,8 @@ Inside an account row:
 Available under **Keystroke Settings → TOTP**:
 
 - **Notification on copy**: Show desktop notification when an OTP code is copied (default: `true`).
-- **Automatic backup**: Write accounts backup to `~/.local/state/keystroke/totp/backup.json` on changes (default: `false`).
+- **Auto-backup directory**: Folder to save encrypted `totp-backup.json` after changes (e.g. `~/Downloads` or `~/Backups`).
+- **Auto-backup passphrase**: Passphrase for AES-256-GCM encryption. Both directory and passphrase must be set to enable encrypted auto-backups.
 - **Default digits**: Number of digits for raw secrets (default: `6`).
 - **Default period**: Validity interval in seconds (default: `30`).
 
