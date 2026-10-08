@@ -118,6 +118,9 @@ TestCase {
         compare(rootRows[0].id, "open")
         compare(rootRows[0].action.type, "navigate")
 
+        // Root query 'totp' -> navigation row
+        var rootTotpRows = TOTPModel.rows("totp", accounts, settings, now, false, "totp", false)
+
         // Scoped query -> account row
         var scopedRows = TOTPModel.rows("", accounts, settings, now, true, "totp", false)
         verify(scopedRows.length >= 1)
@@ -161,5 +164,36 @@ TestCase {
         verify(uri.indexOf("digits=8") >= 0)
         verify(uri.indexOf("period=60") >= 0)
         verify(uri.indexOf("algorithm=SHA256") >= 0)
+    }
+
+    function test_search_in_root() {
+        var accounts = [
+            { id: "1", name: "GitHub", issuer: "GitHub", secret: "JBSWY3DP", digits: 6, period: 30, algorithm: "SHA1" }
+        ]
+        var now = 1234567890 * 1000
+
+        // Default setting: searchInRoot = false
+        var defaultSettings = { searchInRoot: false }
+        var rootRowsDefault = TOTPModel.rows("github", accounts, defaultSettings, now, false, "totp", false)
+        // Only navRow is returned, accounts are hidden at root
+        compare(rootRowsDefault.length, 1)
+        compare(rootRowsDefault[0].id, "open")
+
+        // searchInRoot enabled: accounts are returned at root for fuzzy search
+        var enabledSettings = { searchInRoot: true }
+        var rootRowsEnabled = TOTPModel.rows("github", accounts, enabledSettings, now, false, "totp", false)
+        compare(rootRowsEnabled.length, 2)
+        compare(rootRowsEnabled[0].id, "open")
+        compare(rootRowsEnabled[1].id, "account/1")
+
+        // Scoped mode ignores searchInRoot setting and always searches accounts
+        var scopedRows = TOTPModel.rows("github", accounts, defaultSettings, now, true, "totp", false)
+        compare(scopedRows.length, 1)
+        compare(scopedRows[0].id, "account/1")
+
+        // Command mode (e.g. 'totp github') also always searches accounts
+        var cmdRows = TOTPModel.rows("github", accounts, defaultSettings, now, false, "totp", true)
+        compare(cmdRows.length, 1)
+        compare(cmdRows[0].id, "account/1")
     }
 }

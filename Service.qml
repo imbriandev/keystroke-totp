@@ -15,7 +15,7 @@ QtObject {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   readonly property string home: Quickshell.env("HOME")
   property var host: null
-  property var settings: ({ notifyOnCopy: true, autoBackup: false, defaultDigits: 6, defaultPeriod: 30 })
+  property var settings: ({ notifyOnCopy: true, searchInRoot: false, autoBackup: false, defaultDigits: 6, defaultPeriod: 30 })
   property double now: Date.now()
   readonly property string key: extension && extension.id ? String(extension.id) : "totp"
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || root.home + "/.local/state") + "/keystroke/totp"

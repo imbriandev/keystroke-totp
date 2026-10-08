@@ -12,6 +12,8 @@ var DEFAULT_KEY = "totp"
 var SETTINGS = [
   { key: "notifyOnCopy", type: "boolean", label: "Notification on copy", "default": true,
     description: "Show a desktop notification when an OTP code is copied" },
+  { key: "searchInRoot", type: "boolean", label: "Search accounts in general launcher", "default": false,
+    description: "Show matching accounts in the main search bar without typing 'totp' (off by default)" },
   { key: "backupDirectory", type: "string", label: "Auto-backup directory", "default": "",
     description: "Directory to save encrypted totp-backup.json after changes (leave empty to disable)" },
   { key: "backupPassphrase", type: "string", label: "Auto-backup passphrase", "default": "",
@@ -1168,13 +1170,19 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
     return out
   }
 
-  // Unscoped mode (at root palette)
+  // Unscoped mode (at root palette, without 'totp' prefix)
   if (!q) {
     out.push(navRow(list, 6, sKey))
   } else {
-    // When non-empty query at root, offer accounts matching the query (score omitted for fuzzy Match.match)
-    for (var i = 0; i < list.length; i++) {
-      out.push(accountRow(list[i], now, settings, undefined, sKey, i))
+    // Navigation row for root palette matching ("totp", "2fa", "otp", "auth", etc.)
+    // Score undefined allows Keystroke's built-in Match.match to score it dynamically.
+    out.push(navRow(list, undefined, sKey))
+
+    // Only search individual accounts at root if enabled in settings (default: false)
+    if (settings && settings.searchInRoot === true) {
+      for (var i = 0; i < list.length; i++) {
+        out.push(accountRow(list[i], now, settings, undefined, sKey, i))
+      }
     }
   }
 
