@@ -123,15 +123,43 @@ TestCase {
         verify(scopedRows.length >= 1)
         compare(scopedRows[0].id, "account/1")
         compare(scopedRows[0].verb, "Copy OTP")
-        compare(scopedRows[0].altVerb, "Paste OTP")
+        compare(scopedRows[0].altVerb, "Actions")
+
+        // Account actions scope
+        var actionRows = TOTPModel.rows("", accounts, settings, now, "totp/account/1", "totp", false)
+        compare(actionRows.length, 6)
+        compare(actionRows[0].id, "act-copy-otp/1")
+        compare(actionRows[1].id, "act-paste-otp/1")
+        compare(actionRows[2].id, "act-copy-secret/1")
+        compare(actionRows[3].id, "act-copy-uri/1")
+        compare(actionRows[4].id, "act-edit/1")
+        compare(actionRows[5].id, "act-delete/1")
+        verify(actionRows[5].confirm.length > 0)
 
         // Manage scope
         var manageRows = TOTPModel.rows("", accounts, settings, now, "totp/manage", "totp", false)
-        compare(manageRows[0].id, "manage/1")
-        compare(manageRows[0].verb, "Copy secret")
+        compare(manageRows[0].id, "manage-add")
 
         // Quick OTP
         var quickRows = TOTPModel.rows("quick JBSWY3DP", accounts, settings, now, false, "totp", false)
         compare(quickRows[0].id, "quick-otp")
+    }
+
+    function test_account_update_and_uri() {
+        var accounts = [
+            { id: "1", name: "GitHub", issuer: "GitHub", secret: "JBSWY3DP", digits: 6, period: 30, algorithm: "SHA1" }
+        ]
+        var updated = TOTPModel.updateAccount(accounts, { id: "1", name: "GitHub (Work)", issuer: "GitHub", secret: "JBSWY3DP", digits: 8, period: 60, algorithm: "SHA256" })
+        compare(updated.length, 1)
+        compare(updated[0].name, "GitHub (Work)")
+        compare(updated[0].digits, 8)
+        compare(updated[0].period, 60)
+        compare(updated[0].algorithm, "SHA256")
+
+        var uri = TOTPModel.buildUri(updated[0])
+        verify(uri.indexOf("otpauth://totp/GitHub:") >= 0)
+        verify(uri.indexOf("digits=8") >= 0)
+        verify(uri.indexOf("period=60") >= 0)
+        verify(uri.indexOf("algorithm=SHA256") >= 0)
     }
 }

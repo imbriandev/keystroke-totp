@@ -648,9 +648,52 @@ function addAccount(accounts, input) {
   return sortAccounts(list)
 }
 
+function generateId() {
+  return randomId()
+}
+
+function updateAccount(accounts, input) {
+  var list = (accounts || []).slice()
+  var acc = {
+    id: input.id || randomId(),
+    name: String(input.name || "").trim(),
+    issuer: String(input.issuer || "").trim(),
+    secret: normalizeSecret(input.secret),
+    digits: Number(input.digits) || 6,
+    period: Number(input.period) || 30,
+    algorithm: (input.algorithm || "SHA1").toUpperCase()
+  }
+  var found = -1
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id === acc.id) {
+      found = i
+      break
+    }
+  }
+  if (found >= 0) {
+    list[found] = acc
+  } else {
+    list.push(acc)
+  }
+  return sortAccounts(list)
+}
+
 function removeAccount(accounts, id) {
   var list = (accounts || []).filter(function(a) { return a.id !== id })
   return sortAccounts(list)
+}
+
+function buildUri(account) {
+  var label = encodeURIComponent(account.name || "Account")
+  if (account.issuer) {
+    label = encodeURIComponent(account.issuer) + ":" + label
+  }
+  var uri = "otpauth://totp/" + label + "?secret=" + encodeURIComponent(account.secret)
+  if (account.issuer) uri += "&issuer=" + encodeURIComponent(account.issuer)
+  if (account.algorithm && account.algorithm !== "SHA1") uri += "&algorithm=" + encodeURIComponent(account.algorithm)
+  if (account.digits && account.digits !== 6) uri += "&digits=" + account.digits
+  if (account.period && account.period !== 30) uri += "&period=" + account.period
+  return uri
 }
 
 // ------------------------------------------------------------- palette rows
@@ -667,12 +710,122 @@ function accountAction(code, account, settings) {
   return { type: "copy", text: code.value }
 }
 
-function accountRow(account, now, settings, explicitScore) {
+function accountActionRows(account, now, settings, scopeKey) {
+  var sKey = scopeKey || DEFAULT_KEY
+  var code = generateCode(account, now)
+  var formatted = formatCode(code.value)
+  var uri = buildUri(account)
+  var out = []
+
+  // 1. Copy OTP Code
+  out.push({
+    id: "act-copy-otp/" + account.id,
+    title: "Copy OTP: " + formatted,
+    subtitle: (account.issuer ? account.issuer + " · " : "") + code.remainingSeconds + "s remaining · Enter copies, Ctrl+Enter pastes",
+    icon: ICON,
+    tint: COLOR,
+    section: account.name + (account.issuer ? " (" + account.issuer + ")" : ""),
+    verb: "Copy OTP",
+    altVerb: "Paste OTP",
+    tier: "answer",
+    score: 100,
+    accessory: formatted + "  ·  " + code.remainingSeconds + "s",
+    preview: formatted,
+    previewLabel: (account.issuer || "TOTP").toUpperCase(),
+    previewDetail: account.name + (account.issuer ? " (" + account.issuer + ")" : "") +
+                   "\n\nAlgorithm: " + account.algorithm +
+                   "\nDigits: " + account.digits +
+                   "\nPeriod: " + account.period + "s" +
+                   "\nRemaining: " + code.remainingSeconds + "s",
+    action: accountAction(code, account, settings),
+    altAction: { type: "paste", text: code.value }
+  })
+
+  // 2. Paste OTP Code
+  out.push({
+    id: "act-paste-otp/" + account.id,
+    title: "Paste OTP Code",
+    subtitle: "Paste " + formatted + " directly into the active window",
+    icon: "󰌆",
+    tint: COLOR,
+    section: "Actions",
+    verb: "Paste OTP",
+    tier: "item",
+    score: 90,
+    action: { type: "paste", text: code.value }
+  })
+
+  // 3. Copy Secret Key
+  out.push({
+    id: "act-copy-secret/" + account.id,
+    title: "Copy Secret Key",
+    subtitle: account.secret + " (" + account.algorithm + ", " + account.digits + " digits)",
+    icon: "󰌆",
+    tint: COLOR,
+    section: "Actions",
+    verb: "Copy Secret",
+    tier: "item",
+    score: 80,
+    action: { type: "copy", text: account.secret }
+  })
+
+  // 4. Copy otpauth:// URI
+  out.push({
+    id: "act-copy-uri/" + account.id,
+    title: "Copy otpauth:// URI",
+    subtitle: uri,
+    icon: "󰌆",
+    tint: COLOR,
+    section: "Actions",
+    verb: "Copy URI",
+    tier: "item",
+    score: 70,
+    action: { type: "copy", text: uri }
+  })
+
+  // 5. Edit Account
+  out.push({
+    id: "act-edit/" + account.id,
+    title: "Edit Account",
+    subtitle: "Modify account name, issuer, secret key, algorithm, digits or period",
+    icon: "󰏫",
+    tint: "#3b82f6",
+    section: "Manage",
+    verb: "Edit Account",
+    tier: "item",
+    score: 60,
+    action: { type: "totp-open-edit", account: account }
+  })
+
+  // 6. Delete Account
+  out.push({
+    id: "act-delete/" + account.id,
+    title: "Delete Account",
+    subtitle: "Permanently delete this account and secret key",
+    icon: "󰆴",
+    tint: "#ef4444",
+    section: "Manage",
+    verb: "Delete Account",
+    tier: "item",
+    score: 50,
+    confirm: "Delete account " + account.name + (account.issuer ? " (" + account.issuer + ")" : "") + "?",
+    confirmDetail: "This will permanently remove the account and secret key from Keystroke. This action cannot be undone.",
+    confirmText: "Delete Account",
+    cancelText: "Keep Account",
+    action: { type: "totp-remove", id: account.id }
+  })
+
+  return out
+}
+
+function accountRow(account, now, settings, explicitScore, scopeKey) {
+  var sKey = scopeKey || DEFAULT_KEY
   var code = generateCode(account, now)
   var formatted = formatCode(code.value)
   var subtitle = (account.issuer && account.issuer !== account.name ? account.issuer + " · " : "") +
                  formatted + " · " + code.remainingSeconds + "s"
 
+  var quickPaste = !!(settings && settings.quickPasteOnCtrlEnter)
   var row = {
     id: "account/" + account.id,
     title: account.name,
@@ -681,7 +834,7 @@ function accountRow(account, now, settings, explicitScore) {
     tint: COLOR,
     section: "Accounts",
     verb: "Copy OTP",
-    altVerb: "Paste OTP",
+    altVerb: quickPaste ? "Paste OTP" : "Actions",
     tier: "item",
     order: 10,
     keywords: "totp otp 2fa " + account.name + " " + account.issuer,
@@ -693,9 +846,10 @@ function accountRow(account, now, settings, explicitScore) {
                    "\n\nAlgorithm: " + account.algorithm +
                    "\nDigits: " + account.digits +
                    "\nPeriod: " + account.period + "s" +
-                   "\nRemaining: " + code.remainingSeconds + "s",
+                   "\nRemaining: " + code.remainingSeconds + "s" +
+                   "\n\n↵ Copy OTP  ·  ^↵ Actions (Edit, Delete, Copy Secret)",
     action: accountAction(code, account, settings),
-    altAction: { type: "paste", text: code.value }
+    altAction: quickPaste ? { type: "paste", text: code.value } : { type: "navigate", scope: sKey + "/account/" + account.id, title: account.name }
   }
   if (explicitScore !== undefined) row.score = explicitScore
   return row
@@ -754,34 +908,48 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
   var sKey = scopeKey || DEFAULT_KEY
   var list = accounts || []
 
-  // Check sub-scope: manage screen
-  if (scoped && scoped === sKey + "/manage") {
+  var scStr = typeof scoped === "string" ? scoped : (scoped ? sKey : "")
+
+  // Sub-scope: individual account actions
+  if (scStr && scStr.indexOf(sKey + "/account/") === 0) {
+    var accId = scStr.slice((sKey + "/account/").length)
     for (var i = 0; i < list.length; i++) {
-      var a = list[i]
-      out.push({
-        id: "manage/" + a.id,
-        title: a.name,
-        subtitle: (a.issuer ? a.issuer + " · " : "") + "Secret: " + a.secret.slice(0, 4) + "..." + a.secret.slice(-4),
-        icon: ICON,
-        tint: COLOR,
-        section: "Manage Accounts",
-        verb: "Copy secret",
-        altVerb: "Remove",
-        tier: "item",
-        order: i,
-        score: 50 - i,
-        confirm: "Remove " + a.name + (a.issuer ? " (" + a.issuer + ")" : "") + "?",
-        confirmDetail: "This permanently deletes the saved secret key.",
-        confirmText: "Remove account",
-        cancelText: "Keep account",
-        action: { type: "copy", text: a.secret },
-        altAction: { type: "totp-remove", id: a.id }
-      })
+      if (list[i].id === accId) {
+        return accountActionRows(list[i], now, settings, sKey)
+      }
     }
+    return [{
+      id: "not-found",
+      title: "Account not found",
+      subtitle: "This account may have been removed",
+      icon: ICON,
+      verb: "",
+      tier: "item",
+      score: 1,
+      disabled: true,
+      action: { type: "noop" }
+    }]
+  }
+
+  // Sub-scope: manage screen
+  if (scStr && scStr === sKey + "/manage") {
+    out.push({
+      id: "manage-add",
+      title: "Add New Account",
+      subtitle: "Open form to add a new TOTP secret or scan URI",
+      icon: "󰐿",
+      tint: COLOR,
+      section: "Actions",
+      verb: "Add Account",
+      tier: "item",
+      order: 0,
+      score: 100,
+      action: { type: "totp-open-add" }
+    })
     out.push({
       id: "manage-export",
       title: "Export Accounts Backup",
-      subtitle: "Save all accounts to backup.json",
+      subtitle: "Save encrypted or plain backup of all accounts",
       icon: "󰁯",
       section: "Backup",
       verb: "Export",
@@ -793,7 +961,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
     out.push({
       id: "manage-import",
       title: "Import Accounts Backup",
-      subtitle: "Load accounts from backup.json",
+      subtitle: "Load accounts from backup file",
       icon: "󰁪",
       section: "Backup",
       verb: "Import",
@@ -802,27 +970,64 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
       score: 9,
       action: { type: "totp-import" }
     })
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i]
+      out.push({
+        id: "manage/" + a.id,
+        title: a.name,
+        subtitle: (a.issuer ? a.issuer + " · " : "") + "Secret: " + a.secret.slice(0, 4) + "••••" + a.secret.slice(-4),
+        icon: ICON,
+        tint: COLOR,
+        section: "Manage Accounts",
+        verb: "Actions",
+        altVerb: "Delete",
+        tier: "item",
+        order: 10 + i,
+        score: 50 - i,
+        confirm: "Delete account " + a.name + (a.issuer ? " (" + a.issuer + ")" : "") + "?",
+        confirmDetail: "This will permanently remove the account and secret key.",
+        confirmText: "Delete Account",
+        cancelText: "Keep Account",
+        action: { type: "navigate", scope: sKey + "/account/" + a.id, title: a.name },
+        altAction: { type: "totp-remove", id: a.id }
+      })
+    }
     return out
   }
 
-  // Check if query is an "add" command
+  // Check if query is an "add" command or request
   var lowerQ = q.toLowerCase()
-  if (lowerQ.indexOf("add") === 0) {
+  if (lowerQ === "add" || lowerQ === "new") {
+    out.push({
+      id: "add-form-trigger",
+      title: "Add New TOTP Account",
+      subtitle: "Open form to configure secret key, algorithm, digits",
+      icon: "󰐿",
+      tint: COLOR,
+      section: "Add Account",
+      verb: "Open Form",
+      tier: "answer",
+      score: 100,
+      action: { type: "totp-open-add" }
+    })
+    return out
+  }
+
+  if (lowerQ.indexOf("add ") === 0) {
     var addParsed = parseAdd(q)
     if (addParsed) {
       if (addParsed.incomplete) {
         out.push({
           id: "add-hint",
           title: "Add TOTP Account",
-          subtitle: addParsed.error || "Type totp add <secret> <name> or paste otpauth:// URI",
+          subtitle: addParsed.error || "Type totp add <secret> <name> or press Enter to open form",
           icon: "󰐿",
           tint: COLOR,
           section: "Add Account",
-          verb: "",
+          verb: "Open Form",
           tier: "answer",
           score: 100,
-          disabled: true,
-          action: { type: "noop" }
+          action: { type: "totp-open-add" }
         })
       } else if (addParsed.account) {
         var previewCode = generateCode(addParsed.account, now)
@@ -853,6 +1058,26 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
       var candidateAcc = null
       if (rawCandidate.toLowerCase().indexOf("otpauth:") === 0) {
         candidateAcc = parseInput(rawCandidate)
+        if (candidateAcc) {
+          var previewCode = generateCode(candidateAcc, now)
+          out.push({
+            id: "save-from-uri",
+            title: "Save Account: " + candidateAcc.name,
+            subtitle: (candidateAcc.issuer ? candidateAcc.issuer + " · " : "") +
+                      "From otpauth URI · Current OTP: " + formatCode(previewCode.value) + " · Enter to save",
+            icon: "󰄲",
+            tint: COLOR,
+            section: "Save Account",
+            verb: "Save Account",
+            altVerb: "Copy OTP",
+            tier: "answer",
+            score: 100,
+            accessory: formatCode(previewCode.value) + "  ·  " + previewCode.remainingSeconds + "s",
+            action: { type: "totp-add", account: candidateAcc },
+            altAction: { type: "copy", text: previewCode.value }
+          })
+          if (!scoped && !viaCommand) return out
+        }
       } else if (!isQuickOtp && rawCandidate.length >= 16 && /^[2-7A-Za-z=\s-]+$/.test(rawCandidate)) {
         var norm = normalizeSecret(rawCandidate)
         decodeBase32(norm)
@@ -862,7 +1087,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
         decodeBase32(norm)
         candidateAcc = { name: "Quick OTP", issuer: "", secret: norm, digits: 6, period: 30, algorithm: "SHA1" }
       }
-      if (candidateAcc) {
+      if (candidateAcc && candidateAcc.name === "Quick OTP") {
         out.push(quickOtpRow(candidateAcc, now, settings))
         if (!scoped && !viaCommand) return out
       }
@@ -870,7 +1095,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
   }
 
   // In scoped mode or viaCommand: filter accounts
-  if (scoped || viaCommand) {
+  if (scStr || viaCommand) {
     var searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean)
     var matchedCount = 0
     for (var i = 0; i < list.length; i++) {
@@ -887,7 +1112,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
       }
       if (match) {
         matchedCount++
-        out.push(accountRow(acc, now, settings, 50 - i))
+        out.push(accountRow(acc, now, settings, 50 - i, sKey))
       }
     }
 
@@ -895,38 +1120,40 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
       out.push({
         id: "empty",
         title: list.length ? "No matching accounts" : "No TOTP accounts saved",
-        subtitle: list.length ? "Try another search query" : "Type `totp add <secret or URI>` to add an account",
+        subtitle: list.length ? "Try another search query or press Enter to add" : "Press Enter to add your first account",
         icon: ICON,
         tint: COLOR,
         section: "Accounts",
-        verb: "",
+        verb: "Add Account",
         tier: "item",
         score: 1,
-        disabled: true,
-        action: { type: "noop" }
+        action: { type: "totp-open-add" }
       })
     }
 
-    // Navigation and management rows inside scoped view
+    // Action row for adding an account
     out.push({
-      id: "add-command",
-      title: "Add Account",
-      subtitle: "Type totp add <secret> <name> or paste otpauth:// URI",
+      id: "add-account-action",
+      title: "Add New Account",
+      subtitle: "Open form to configure secret key or scan URI",
       icon: "󰐿",
+      tint: COLOR,
       section: "Actions",
-      verb: "Type command",
+      verb: "Add Account",
       tier: "item",
       order: 70,
       score: 5,
-      action: { type: "query", text: "totp add " }
+      action: { type: "totp-open-add" }
     })
+
+    // Navigation and management rows inside scoped view
     out.push({
       id: "manage-screen",
-      title: "Manage Accounts",
-      subtitle: "View secret keys, export or remove accounts",
+      title: "Manage All Accounts & Backups",
+      subtitle: "View secret keys, export encrypted backup, or import accounts",
       icon: "󰒓",
       section: "Actions",
-      verb: "Open",
+      verb: "Manage",
       tier: "item",
       order: 71,
       score: 4,
@@ -941,7 +1168,7 @@ function rows(query, accounts, settings, now, scoped, scopeKey, viaCommand, patt
   } else {
     // When non-empty query at root, offer accounts matching the query (score omitted for fuzzy Match.match)
     for (var i = 0; i < list.length; i++) {
-      out.push(accountRow(list[i], now, settings))
+      out.push(accountRow(list[i], now, settings, undefined, sKey))
     }
   }
 

@@ -35,6 +35,7 @@ QtObject {
     prefix: "totp",
     patterns: TOTPModel.PATTERNS,
     settings: TOTPModel.SETTINGS,
+    view: root.view,
     query: function(ctx) { return root.query(ctx) },
     activate: function(row, ctx) { return root.activate(row, ctx) },
     opened: function() {
@@ -42,6 +43,9 @@ QtObject {
       accFile.reload()
     }
   })
+
+  readonly property Component view: Component { AccountFormView { service: root } }
+  property var editingAccount: null
 
   // Ensure state directory exists on load
   readonly property Process dirEnsurer: Process {
@@ -93,6 +97,25 @@ QtObject {
     root.triggerAutoBackup()
   }
 
+  function saveAccount(acc) {
+    var list = root.accounts || []
+    var exists = false
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === acc.id) {
+        exists = true
+        break
+      }
+    }
+    var updated = exists ? TOTPModel.updateAccount(list, acc) : TOTPModel.addAccount(list, acc)
+    root.save(updated)
+    root.editingAccount = null
+    if (root.host) {
+      root.host.statusMessage = exists ? "Updated " + acc.name : "Added " + acc.name
+      root.host.goBack()
+      if (root.host.opened) root.host.requery({ catalog: false, provider: root.key })
+    }
+  }
+
   // 1-second clock updates live remaining seconds and OTP codes when palette is opened
   readonly property Timer clock: Timer {
     interval: 1000
@@ -137,6 +160,16 @@ QtObject {
     var effect = ctx.alternate && row.altAction ? row.altAction : row.action
     if (!effect) return effect
 
+    if (effect.type === "totp-open-edit") {
+      root.editingAccount = effect.account
+      return { type: "provider-view", provider: root.key }
+    }
+
+    if (effect.type === "totp-open-add") {
+      root.editingAccount = null
+      return { type: "provider-view", provider: root.key }
+    }
+
     if (effect.type === "totp-add") {
       var updated = TOTPModel.addAccount(root.accounts, effect.account)
       root.save(updated)
@@ -158,15 +191,21 @@ QtObject {
     if (effect.type === "totp-remove") {
       var removed = TOTPModel.removeAccount(root.accounts, effect.id)
       root.save(removed)
-      if (root.host && root.host.opened) root.host.requery({ catalog: false, provider: root.key })
+      if (root.host) {
+        if (root.host.scope && root.host.scope.indexOf(root.key + "/account/" + effect.id) === 0) {
+          root.host.goBack()
+        }
+        root.host.statusMessage = "Account deleted"
+        if (root.host.opened) root.host.requery({ catalog: false, provider: root.key })
+      }
       return {
         type: "compound",
         actions: [
           {
             type: "notify",
             glyph: "󰌆",
-            headline: "Account removed",
-            body: "Account has been deleted"
+            headline: "Account deleted",
+            body: "Account has been permanently deleted"
           },
           { type: "noop" }
         ]

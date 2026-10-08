@@ -98,6 +98,53 @@ const { parseInput } = require('./core/TOTP.js');
     return 0
 
 
+def cmd_delete(args):
+    accounts = load_accounts()
+    query = args.query.lower().strip()
+    match_index = -1
+    for i, a in enumerate(accounts):
+        if a.get("id") == args.query or query in a.get("name", "").lower() or query in a.get("issuer", "").lower():
+            match_index = i
+            break
+    if match_index < 0:
+        print(f"No account found matching '{args.query}'.", file=sys.stderr)
+        return 1
+    removed = accounts.pop(match_index)
+    save_accounts(accounts)
+    print(f"Deleted account '{removed.get('name')}' successfully.")
+    return 0
+
+
+def cmd_edit(args):
+    accounts = load_accounts()
+    query = args.query.lower().strip()
+    match = None
+    for a in accounts:
+        if a.get("id") == args.query or query in a.get("name", "").lower() or query in a.get("issuer", "").lower():
+            match = a
+            break
+    if not match:
+        print(f"No account found matching '{args.query}'.", file=sys.stderr)
+        return 1
+
+    if args.name:
+        match["name"] = args.name.strip()
+    if args.issuer is not None:
+        match["issuer"] = args.issuer.strip()
+    if args.secret:
+        match["secret"] = args.secret.upper().replace(" ", "").replace("-", "")
+    if args.digits:
+        match["digits"] = int(args.digits)
+    if args.period:
+        match["period"] = int(args.period)
+    if args.algorithm:
+        match["algorithm"] = args.algorithm.upper()
+
+    save_accounts(accounts)
+    print(f"Updated account '{match.get('name')}' successfully.")
+    return 0
+
+
 def cmd_export(args):
     accounts = load_accounts()
     out_path = Path(args.output or (STATE_DIR / "backup.json"))
@@ -210,6 +257,18 @@ def main():
     add_parser.add_argument("name", nargs="?", default="", help="Account name")
     add_parser.add_argument("issuer", nargs="?", default="", help="Issuer")
 
+    delete_parser = subparsers.add_parser("delete", help="Delete an account by name or id")
+    delete_parser.add_argument("query", help="Account name or ID to delete")
+
+    edit_parser = subparsers.add_parser("edit", help="Edit an account")
+    edit_parser.add_argument("query", help="Account name or ID to edit")
+    edit_parser.add_argument("--name", help="New account name")
+    edit_parser.add_argument("--issuer", help="New issuer")
+    edit_parser.add_argument("--secret", help="New Base32 secret key")
+    edit_parser.add_argument("--digits", help="Number of digits (6 or 8)")
+    edit_parser.add_argument("--period", help="Period in seconds (e.g. 30)")
+    edit_parser.add_argument("--algorithm", help="Algorithm (SHA1, SHA256, SHA512)")
+
     export_parser = subparsers.add_parser("export", help="Export backup")
     export_parser.add_argument("output", nargs="?", default="", help="Output file path")
     export_parser.add_argument("--passphrase", help="Encrypt with passphrase (Raycast format)")
@@ -223,6 +282,10 @@ def main():
         return cmd_list(args)
     elif args.command == "add":
         return cmd_add(args)
+    elif args.command == "delete":
+        return cmd_delete(args)
+    elif args.command == "edit":
+        return cmd_edit(args)
     elif args.command == "export":
         return cmd_export(args)
     elif args.command == "import":
